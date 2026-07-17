@@ -3,28 +3,37 @@
 // Licensed under the MIT license.  See the LICENSE file in the project root for more information.
 
 using System;
+using System.IO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using TugDSC.Server.Mvc;
 using TugDSC.Server.Util;
 
 namespace TugDSC.Server.WebAppHost.Controllers
 {
     /// <summary>
-    /// Implements the legacy WMF 4.0 ("v1") DSC pull protocol used by
-    /// PowerShell 4.0 nodes: configurations are addressed by a
-    /// <c>ConfigurationId</c> GUID, there is no agent registration and no HMAC
-    /// authorization (unlike the v2 <see cref="DscController"/>).
+    /// Implements the legacy WMF 4.0 ("v1.0/1.1") DSC pull protocol used by
+    /// PowerShell 4.0 nodes, per [MS-DSCPM] section 3.1/3.3: configurations are
+    /// addressed by a <c>ConfigurationId</c> GUID, there is no agent
+    /// registration and no HMAC authorization (unlike the v2
+    /// <see cref="DscController"/>).
     /// </summary>
     /// <remarks>
     /// A v4 LCM is pointed here by a meta-config whose
-    /// <c>DownloadManagerCustomData.ServerUrl</c> ends in a path (the classic
-    /// <c>PSDSCPullServer.svc</c>); the LCM then appends OData-style operations,
-    /// e.g. <c>POST .../Action(ConfigurationId='&lt;guid&gt;')/GetAction</c>.
+    /// <c>DownloadManagerCustomData.ServerUrl</c> ends in a path (classically
+    /// <c>PSDSCPullServer.svc</c>); the LCM then appends the OData-style
+    /// operations:
+    /// <list type="bullet">
+    /// <item><c>POST .../Action(ConfigurationId='&lt;guid&gt;')/GetAction</c> — status check
+    ///   (request body <c>{Checksum, ChecksumAlgorithm, NodeCompliant, ...}</c>,
+    ///   response body <c>{"value":"GetConfiguration"|"OK"}</c>).</item>
+    /// <item><c>GET .../Action(ConfigurationId='&lt;guid&gt;')/ConfigurationContent</c> —
+    ///   download the MOF with <c>Checksum</c>/<c>ChecksumAlgorithm</c> headers.</item>
+    /// </list>
     /// Configurations are served from the same store as v2, keyed by the GUID:
-    /// deploy the MOF as <c>&lt;ConfigurationId&gt;.mof</c> (both the flat and
-    /// SHARED paths, like any other config).
+    /// deploy the MOF as <c>&lt;ConfigurationId&gt;.mof</c>.
     ///
     /// The v2 global filters (registration/HMAC, very-strict input) no-op here
     /// because these actions don't bind a <c>DscRequest</c> model.
@@ -43,15 +52,17 @@ namespace TugDSC.Server.WebAppHost.Controllers
             _dscHandler = dscHelper.DefaultHandler;
         }
 
-        public class ClientStatusItem
+        /// <summary>
+        /// The v1 GetAction request body ([MS-DSCPM] 3.3.5.1.1.1) — a flat
+        /// object, not the v2 <c>ClientStatus</c> array.
+        /// </summary>
+        public class GetActionBody
         {
             public string Checksum { get; set; }
             public string ChecksumAlgorithm { get; set; }
-        }
-
-        public class GetActionBody
-        {
-            public ClientStatusItem[] ClientStatus { get; set; }
+            public bool? NodeCompliant { get; set; }
+            public int? StatusCode { get; set; }
+            public string ConfigurationName { get; set; }
         }
 
         /// <summary>
@@ -69,24 +80,19 @@ namespace TugDSC.Server.WebAppHost.Controllers
 
             try
             {
-                var clientChecksum = body?.ClientStatus != null && body.ClientStatus.Length > 0
-                        ? body.ClientStatus[0].Checksum
-                        : null;
-
-                // Empty/blank on the first pull -> always fetch.
-                var status = !string.IsNullOrEmpty(clientChecksum)
-                        && string.Equals(clientChecksum, content.Checksum, StringComparison.OrdinalIgnoreCase)
+                // Empty/blank checksum on the first pull -> always fetch.
+                var status = !string.IsNullOrEmpty(body?.Checksum)
+                        && string.Equals(body.Checksum, content.Checksum, StringComparison.OrdinalIgnoreCase)
                     ? "OK"
                     : "GetConfiguration";
 
                 _logger.LogInformation("v1 GetAction -> {status}", status);
 
-                // The WMF 4.0 LCM parses this case-sensitively and expects
-                // PascalCase "NodeStatus". ASP.NET Core's AddNewtonsoftJson
-                // defaults to camelCase, so serialize explicitly (default
-                // Newtonsoft = PascalCase) rather than via Json()/the MVC
-                // formatter — without touching the v2 responses.
-                var json = JsonConvert.SerializeObject(new { NodeStatus = status });
+                // [MS-DSCPM] 3.3.5.1.1.2 / section 6: the response body is
+                // { "value": "<status>" } (lowercase "value"). Serialize
+                // explicitly so ASP.NET Core's camelCase default doesn't matter
+                // and the v2 responses stay untouched.
+                var json = JsonConvert.SerializeObject(new { value = status });
                 return Content(json, "application/json");
             }
             finally
@@ -99,10 +105,10 @@ namespace TugDSC.Server.WebAppHost.Controllers
         /// v1 configuration download. Serves <c>&lt;ConfigurationId&gt;.mof</c>
         /// with the DSC <c>Checksum</c>/<c>ChecksumAlgorithm</c> response headers.
         /// </summary>
-        [HttpGet(SVC + "/Configurations(ConfigurationId='{configurationId}')/ConfigurationContent")]
-        public IActionResult GetConfigurationV1(string configurationId)
+        [HttpGet(SVC + "/Action(ConfigurationId='{configurationId}')/ConfigurationContent")]
+        public IActionResult GetConfigurationContentV1(string configurationId)
         {
-            _logger.LogInformation("v1 GetConfiguration ConfigurationId=[{cid}]", configurationId);
+            _logger.LogInformation("v1 ConfigurationContent ConfigurationId=[{cid}]", configurationId);
 
             var content = _dscHandler.GetConfiguration(Guid.Empty, configurationId);
             if (content == null)
@@ -111,6 +117,42 @@ namespace TugDSC.Server.WebAppHost.Controllers
             Response.Headers["Checksum"] = content.Checksum;
             Response.Headers["ChecksumAlgorithm"] = content.ChecksumAlgorithm;
             return File(content.Content, "application/octet-stream");
+        }
+
+        /// <summary>
+        /// v1 status report ([MS-DSCPM] 3.4). The node POSTs a JSON report after
+        /// a consistency run. Stored under <c>Reports/&lt;ConfigurationId&gt;/</c>
+        /// (same layout as v2, so the same backups pick it up). The spec is
+        /// inconsistent about the segment name (<c>Node</c> vs <c>Nodes</c>), so
+        /// both are accepted.
+        /// </summary>
+        [HttpPost(SVC + "/Nodes(ConfigurationId='{configurationId}')/SendStatusReport")]
+        [HttpPost(SVC + "/Node(ConfigurationId='{configurationId}')/SendStatusReport")]
+        public IActionResult SendStatusReportV1(string configurationId, [FromBody] JObject body)
+        {
+            _logger.LogInformation("v1 SendStatusReport ConfigurationId=[{cid}]", configurationId);
+            try
+            {
+                // The reports directory is a property of the file-based handler;
+                // read it reflectively to avoid coupling to the concrete type.
+                var reportsPath = _dscHandler.GetType().GetProperty("ReportsPath")?
+                        .GetValue(_dscHandler) as string;
+                if (!string.IsNullOrEmpty(reportsPath) && body != null)
+                {
+                    var jobId = (string)body["JobId"];
+                    if (string.IsNullOrEmpty(jobId))
+                        jobId = Guid.NewGuid().ToString();
+                    var dir = Path.Combine(reportsPath, configurationId);
+                    Directory.CreateDirectory(dir);
+                    System.IO.File.WriteAllText(Path.Combine(dir, jobId + ".json"), body.ToString());
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "v1 SendStatusReport store failed (non-fatal)");
+            }
+
+            return Ok();
         }
     }
 }
