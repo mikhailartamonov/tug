@@ -1,0 +1,19 @@
+# WinGet Configuration document — apply with:  winget configure --file baseline.winget.yaml
+# Use this with the pull agent's  -Engine winget  (Win10/11 / Server 2025, winget in-box).
+#
+# It reuses the classic PSDesiredStateConfiguration/File resource through WinGet's
+# DSC bridge — same effect as the v1/v2 hello.txt test, so you can eyeball success.
+# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
+properties:
+  configurationVersion: 0.2.0
+  resources:
+    - resource: PSDesiredStateConfiguration/File
+      id: helloFile
+      directives:
+        description: Write a marker file proving the pull agent applied config
+        allowPrerelease: true
+      settings:
+        DestinationPath: C:\TugTest\hello-v3-winget.txt
+        Contents: "Applied by the DSC v3 pull agent via 'winget configure'.\n"
+        Ensure: Present
+        Type: File

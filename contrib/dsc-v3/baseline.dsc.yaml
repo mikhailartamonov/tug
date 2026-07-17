@@ -1,0 +1,20 @@
+# DSC v3 configuration document — apply with:  dsc config set --file baseline.dsc.yaml
+# Use this with the pull agent's  -Engine dsc  (Windows Server 2016/2019/2022, or
+# anywhere winget isn't in-box; dsc.exe is a standalone binary, no LCM/WMI).
+#
+# It runs the classic PSDesiredStateConfiguration/File resource through the
+# WindowsPowerShell adapter (in-box Windows PowerShell 5.1) — same visible effect
+# as the v1/v2 hello.txt test.
+$schema: https://aka.ms/dsc/schemas/v3/bundled/config/document.json
+resources:
+  - name: windows-powershell
+    type: Microsoft.Windows/WindowsPowerShell
+    properties:
+      resources:
+        - name: helloFile
+          type: PSDesiredStateConfiguration/File
+          properties:
+            DestinationPath: C:\TugTest\hello-v3-dsc.txt
+            Contents: "Applied by the DSC v3 pull agent via 'dsc config set'.\n"
+            Ensure: Present
+            Type: File

@@ -42,6 +42,14 @@ A v1 node fetches `<ConfigurationId>.mof`; a v2 node registers, then fetches
 `<ConfigurationName>.mof`. Both were verified end-to-end against real Windows
 nodes. See [`docs/DEPLOY.md`](docs/DEPLOY.md) for onboarding each.
 
+> **Modern fleets — DSC v3.** WMF 5.1 DSC (v1/v2) is frozen and its in-box LCM is
+> fragile on imaged/sysprepped machines. For **Windows 10/11 and Server 2016+**,
+> the forward path is **DSC v3** (`dsc.exe` / `winget configure`) — no LCM, no
+> WMI, so it sidesteps that whole class of breakage. Since DSC v3 ships no pull
+> server, [`dsc-v3/`](dsc-v3/) provides a thin self-hosted **pull agent** (Task
+> Scheduler + stock engine, config served from this same server). Keep v1 for
+> the truly old boxes that can't run `dsc.exe`.
+
 ## Start here
 
 New to this? Follow the path that matches what you're trying to do. Each step
