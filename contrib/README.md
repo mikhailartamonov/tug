@@ -49,6 +49,10 @@ nodes. See [`docs/DEPLOY.md`](docs/DEPLOY.md) for onboarding each.
 > server, [`dsc-v3/`](dsc-v3/) provides a thin self-hosted **pull agent** (Task
 > Scheduler + stock engine, config served from this same server). Keep v1 for
 > the truly old boxes that can't run `dsc.exe`.
+>
+> To author for a mixed fleet without maintaining three files by hand,
+> [`generator/`](generator/) turns one neutral spec into all three formats
+> (MOF `.ps1` + DSC v3 doc + WinGet config).
 
 ## Start here
 

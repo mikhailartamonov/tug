@@ -1,0 +1,22 @@
+# Neutral fleet spec — author once, generate MOF (.ps1) + DSC v3 + WinGet.
+# Each resource is a classic PowerShell DSC resource; its properties are the
+# same in every output format. Run:
+#   python3 generate-fleet-config.py neutral.example.yaml -o out
+name: Baseline
+resources:
+  - type: File
+    name: HelloFile
+    properties:
+      DestinationPath: C:\TugTest\hello.txt
+      Contents: "Managed by the fleet baseline configuration."
+      Ensure: Present
+      Type: File
+
+  - type: Registry
+    name: FleetMarker
+    properties:
+      Key: HKLM\SOFTWARE\Fleet
+      ValueName: Baseline
+      ValueData: applied
+      ValueType: String
+      Ensure: Present

@@ -50,4 +50,8 @@ jobs:
         with:
           python-version: '3.x'
       - name: Syntax-check contrib tooling
-        run: python -m py_compile contrib/tools/dsc_server_test.py contrib/tools/winrm_helper.py
+        run: |
+          python -m pip install --quiet pyyaml
+          python -m py_compile contrib/tools/dsc_server_test.py contrib/tools/winrm_helper.py contrib/generator/generate-fleet-config.py
+          python contrib/generator/generate-fleet-config.py contrib/generator/neutral.example.yaml -o /tmp/genout
+          python -c "import yaml; [yaml.safe_load(open('/tmp/genout/'+f)) for f in ['Baseline.dsc.yaml','Baseline.winget.yaml']]; print('generator output valid')"
