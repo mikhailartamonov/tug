@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+#
+# tug-publish — deploy a compiled MOF to a Tug pull server, correctly.
+#
+# Handles the three things that are easy to get wrong by hand:
+#   1. copies the MOF to BOTH Configuration/<Name>.mof and
+#      Configuration/SHARED/<Name>.mof (GetDscAction reads SHARED, GetConfiguration
+#      serves the other — deploy to one only and the node never pulls or mismatches)
+#   2. writes <Name>.mof.checksum as the UPPERCASE SHA-256 of the deployed bytes
+#   3. optionally verifies the whole pull cycle with dsc_server_test.py
+#
+# Usage:
+#   tug-publish <mof-file> <config-name> [options]
+#
+# Options:
+#   --store DIR     configuration store (default: /var/lib/tug/Configuration)
+#   --verify        after publishing, run the protocol harness against the server
+#                   (needs DSC_SERVER_URL and DSC_REG_KEY in the environment)
+#   --owner U[:G]   chown the deployed files to this owner
+#   -h, --help      show this help
+#
+# Examples:
+#   tug-publish ./localhost.mof SystemReport
+#   tug-publish out/localhost.mof WebServer --store /var/lib/tug/Configuration --verify
+#
+set -euo pipefail
+
+STORE="/var/lib/tug/Configuration"
+VERIFY=0
+OWNER=""
+
+die() { echo "tug-publish: $*" >&2; exit 1; }
+
+# ---- parse args ----
+POS=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --store)  STORE="${2:?--store needs a dir}"; shift 2 ;;
+        --owner)  OWNER="${2:?--owner needs a user}"; shift 2 ;;
+        --verify) VERIFY=1; shift ;;
+        -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -*) die "unknown option: $1" ;;
+        *)  POS+=("$1"); shift ;;
+    esac
+done
+
+[ "${#POS[@]}" -eq 2 ] || die "usage: tug-publish <mof-file> <config-name> [--store DIR] [--verify] [--owner U]"
+MOF="${POS[0]}"
+NAME="${POS[1]}"
+
+# ---- validate the MOF ----
+# (PowerShell 5.1 compiles MOFs as UTF-16, so strip NULs before matching.)
+[ -f "$MOF" ] || die "MOF not found: $MOF"
+[ -s "$MOF" ] || die "MOF is empty: $MOF"
+if ! tr -d '\000' < "$MOF" | LC_ALL=C grep -qi 'instance of MSFT_'; then
+    die "'$MOF' doesn't look like a compiled MOF (no 'instance of MSFT_' found).
+     Did you ship a stale/blank localhost.mof? Recompile and check the content."
+fi
+
+# ---- deploy to both paths ----
+DST="$STORE/$NAME.mof"
+DST_SHARED="$STORE/SHARED/$NAME.mof"
+SUM_FILE="$STORE/$NAME.mof.checksum"
+
+mkdir -p "$STORE/SHARED"
+install -m 0644 "$MOF" "$DST"
+install -m 0644 "$MOF" "$DST_SHARED"
+
+# ---- checksum: uppercase SHA-256 of the deployed bytes ----
+SUM="$(sha256sum "$DST" | awk '{print toupper($1)}')"
+printf '%s' "$SUM" > "$SUM_FILE"
+
+if [ -n "$OWNER" ]; then
+    chown "$OWNER" "$DST" "$DST_SHARED" "$SUM_FILE"
+fi
+
+BYTES="$(wc -c < "$DST" | tr -d ' ')"
+echo "published '$NAME'"
+echo "  $DST"
+echo "  $DST_SHARED"
+echo "  $SUM_FILE"
+echo "  ${BYTES} bytes, SHA-256 $SUM"
+
+# ---- optional end-to-end verify ----
+if [ "$VERIFY" -eq 1 ]; then
+    echo ""
+    HERE="$(cd "$(dirname "$0")" && pwd)"
+    [ -n "${DSC_SERVER_URL:-}" ] || die "--verify needs DSC_SERVER_URL in the environment"
+    [ -n "${DSC_REG_KEY:-}" ]    || die "--verify needs DSC_REG_KEY in the environment"
+    echo "verifying against $DSC_SERVER_URL ..."
+    DSC_MOF_PATH="$DST" python3 "$HERE/dsc_server_test.py"
+fi
