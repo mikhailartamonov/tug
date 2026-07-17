@@ -5,6 +5,7 @@
 using System;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using TugDSC.Server.Mvc;
 using TugDSC.Server.Util;
 
@@ -79,7 +80,14 @@ namespace TugDSC.Server.WebAppHost.Controllers
                     : "GetConfiguration";
 
                 _logger.LogInformation("v1 GetAction -> {status}", status);
-                return Json(new { NodeStatus = status });
+
+                // The WMF 4.0 LCM parses this case-sensitively and expects
+                // PascalCase "NodeStatus". ASP.NET Core's AddNewtonsoftJson
+                // defaults to camelCase, so serialize explicitly (default
+                // Newtonsoft = PascalCase) rather than via Json()/the MVC
+                // formatter — without touching the v2 responses.
+                var json = JsonConvert.SerializeObject(new { NodeStatus = status });
+                return Content(json, "application/json");
             }
             finally
             {
