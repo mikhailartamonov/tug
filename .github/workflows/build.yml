@@ -1,0 +1,53 @@
+name: build
+
+# The .NET 8 port targets the server and its two abstraction projects only
+# (the repo also contains unported PS5/client/FaaS projects, so we build the
+# server .csproj directly rather than the full solution).
+
+on:
+  push:
+    branches: [net8-port]
+  pull_request:
+    branches: [net8-port]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT: src/TugDSC.Server.WebAppHost/TugDSC.Server.WebAppHost.csproj
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore "$PROJECT"
+
+      - name: Build (Release)
+        run: dotnet build "$PROJECT" -c Release --no-restore
+
+      - name: Publish (framework-dependent)
+        run: dotnet publish "$PROJECT" -c Release -o publish-fd --no-build
+
+      - name: Upload publish output
+        uses: actions/upload-artifact@v4
+        with:
+          name: tug-net8-publish
+          path: publish-fd/
+          if-no-files-found: error
+
+  tooling:
+    # Cheap guard: the Python protocol harness must at least parse.
+    # (It needs a live server + reg key to actually run — that's not done here.)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Syntax-check contrib tooling
+        run: python -m py_compile contrib/tools/dsc_server_test.py contrib/tools/winrm_helper.py

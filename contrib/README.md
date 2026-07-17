@@ -1,5 +1,7 @@
 # contrib — .NET 8 deployment tooling & tests
 
+[![build](https://github.com/mikhailartamonov/tug/actions/workflows/build.yml/badge.svg?branch=net8-port)](https://github.com/mikhailartamonov/tug/actions/workflows/build.yml)
+
 This directory holds tooling that accompanies the .NET 8 port of Tug: a
 protocol test harness, a sample DSC configuration, and deployment notes.
 None of it is required to build the server — it's here to make the port
