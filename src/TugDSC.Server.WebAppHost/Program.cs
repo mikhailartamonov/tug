@@ -168,10 +168,16 @@ namespace TugDSC.Server.WebAppHost
             var asm = typeof(Program).Assembly;
             var asmName = asm.GetName();
             var asmVers = asmName.Version;
-            var asmInfo = FileVersionInfo.GetVersionInfo(asm.Location);
 
-            // The copyright rune may not print so well on console
-            var copyright = asmInfo.LegalCopyright?.Replace("©", "(C)"); 
+            // In single-file / trimmed publishes asm.Location is empty; guard against it
+            var asmLoc = asm.Location;
+            string copyright = null;
+            if (!string.IsNullOrEmpty(asmLoc))
+            {
+                var asmInfo = FileVersionInfo.GetVersionInfo(asmLoc);
+                // The copyright rune may not print so well on console
+                copyright = asmInfo.LegalCopyright?.Replace("©", "(C)");
+            }
 
             Console.WriteLine($"TugDSC Server WebAppHost v{asmVers} -- starting up");
           //Console.WriteLine(asmInfo.ProductName);

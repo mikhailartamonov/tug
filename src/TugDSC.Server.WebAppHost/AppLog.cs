@@ -19,16 +19,15 @@ namespace TugDSC.Server.WebAppHost
     /// </remarks>
     public static class AppLog
     {
-        private static LoggerFactory _preLoggerFactory;
+        private static readonly ILoggerFactory _preLoggerFactory;
 
         static AppLog()
         {
             // We set this up to log any events that take place before the
-            // ultimate logging configuration is finalized and realized
-            _preLoggerFactory = new LoggerFactory();
+            // ultimate logging configuration is finalized and realized.
             // Here we configure the hard-coded settings of the pre-logger with
             // anything we want before the runtime logging config is resolved
-            _preLoggerFactory.AddConsole();
+            _preLoggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
 
             // This will be the final runtime logger factory
             Factory = new LoggerFactory();

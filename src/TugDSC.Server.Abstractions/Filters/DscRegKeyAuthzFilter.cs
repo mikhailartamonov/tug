@@ -137,6 +137,52 @@ namespace TugDSC.Server.Filters
                     context.HttpContext.Request.Body = new MemoryStream(bodyBytes);
                 }
             }
+            else if (body != null)
+            {
+                // For non-Register routes (SendReport, GetDscAction, etc.), real-world
+                // LCM behavior (observed against Windows Server 2019 / WMF 5.1) sends its
+                // very first SendReport call *before* the node has ever been Registered.
+                // The below IsAgentAuthorized() check in OnActionExecuting only accepts
+                // previously-registered agents, so that first report gets a 401 -- which
+                // triggers a client-side .NET formatting bug in the LCM's own error path
+                // and poisons the whole Set-DscLocalConfigurationManager operation.
+                //
+                // Fix: also accept the request here if it carries a currently-valid HMAC
+                // signature against a known registration key, same mechanism as Register
+                // uses -- this doesn't weaken security (these routes previously didn't
+                // validate the signature at all) and lets a freshly-keyed-but-not-yet-
+                // registered agent through on its very first call.
+                var authzHeader = (string)context.HttpContext.Request?.Headers[
+                        nameof(HttpRequestHeaders.Authorization)];
+                var msDateHeader = (string)context.HttpContext.Request?.Headers[
+                        DscRequest.X_MS_DATE_HEADER];
+
+                if (!string.IsNullOrEmpty(authzHeader) && !string.IsNullOrEmpty(msDateHeader))
+                {
+                    using (var ms = new MemoryStream())
+                    {
+                        body.CopyTo(ms);
+                        var bodyBytes = ms.ToArray();
+
+                        string agentRegKey = null;
+                        try
+                        {
+                            agentRegKey = ValidateRegKeySignature(authzHeader, msDateHeader,
+                                    _handler.RegistrationKeys, bodyBytes);
+                        }
+                        catch (InvalidDataException)
+                        {
+                            // malformed Authorization header -- fall through to the
+                            // existing IsAgentAuthorized() check in OnActionExecuting
+                        }
+
+                        if (!string.IsNullOrEmpty(agentRegKey))
+                            context.HttpContext.Items[HTTP_CONTEXT_ITEM_AGENT_REG_KEY] = agentRegKey;
+
+                        context.HttpContext.Request.Body = new MemoryStream(bodyBytes);
+                    }
+                }
+            }
         }
 
         public void OnActionExecuting(ActionExecutingContext context)
@@ -188,11 +234,12 @@ namespace TugDSC.Server.Filters
             }
             else
             {
-                // For all other requests, if they are valid DSC
-                // messages we just need to validate that they are
-                // associated with a previously registered Agent ID
-                // so validate that the Agent ID has been registered
-                if (!_handler.IsAgentAuthorized(agentId.Value))
+                // For all other requests, allow through if EITHER the Agent ID was
+                // previously registered OR this specific request carries a currently
+                // valid HMAC signature against a known registration key (see the
+                // corresponding OnAuthorization change above for why the latter matters).
+                var hasValidSignature = context.HttpContext.Items[HTTP_CONTEXT_ITEM_AGENT_REG_KEY] != null;
+                if (!_handler.IsAgentAuthorized(agentId.Value) && !hasValidSignature)
                 {
                     _logger.LogWarning("failed RegKey authorization for Agent ID [{agentId}]", agentId);
                     context.Result = new UnauthorizedResult();

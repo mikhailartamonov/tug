@@ -1,43 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
-  <Import Project="$(MSBuildThisFileDirectory)/../../TugDSC.common.props"
-      Condition="'$(TugDSC_common_props)' == ''" />
-  <Import Project="$(MSBuildThisFileDirectory)/../../TugDSC.sharedasm.props"
-      Condition="'$(TugDSC_sharedasm_props)' == ''" />
-
+  <Import Project="$(MSBuildThisFileDirectory)/../../TugDSC.common.props" Condition="'$(TugDSC_common_props)' == ''" />
+  <Import Project="$(MSBuildThisFileDirectory)/../../TugDSC.sharedasm.props" Condition="'$(TugDSC_sharedasm_props)' == ''" />
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <NoWarn>$(NoWarn);$(CommonNoWarn)</NoWarn>
     <RootNamespace>TugDSC</RootNamespace>
-  </PropertyGroup>
-
-  <PropertyGroup>
     <AssemblyTitle>TugDSC Abstractions</AssemblyTitle>
     <AssemblyDescription>Common Abstractions &amp; Components</AssemblyDescription>
   </PropertyGroup>
-
-  <!--
-    - NOTE: we can't use the MS.AspNetCore.All meta-package here because this is a netstandard
-    -       classlib and the meta-package requires targeting netcoreapp.  A really good write up
-    -       with all the details is here:
-    -       https://weblog.west-wind.com/posts/2017/Sep/26/A-few-notes-on-creating-Class-Libraries-for-ASPNET-Core
-    -->
   <ItemGroup>
-    <!--
-    <PackageReference Include="System.Composition.Hosting" Version="1.1.0" />
-    <PackageReference Include="System.Composition.Convention" Version="1.1.0" />
-    -->
-    <PackageReference Include="Microsoft.Composition" Version="1.0.31" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Abstractions" Version="2.0.*" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.DataAnnotations" Version="2.0.*" />
-
-    <!-- These have to be explicitly referenced so we don't get a version
-         downgrade error during publish to a specific target RID -->
-    <PackageReference Include="System.Runtime.Handles" Version="4.3.0" />
-    <PackageReference Include="System.Runtime.InteropServices" Version="4.3.0" />
-    <PackageReference Include="System.IO.FileSystem.Primitives" Version="4.3.0" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="System.Composition" Version="8.0.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Microsoft.Extensions.DependencyModel" Version="8.0.2" />
   </ItemGroup>
-
-
-
 </Project>

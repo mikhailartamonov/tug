@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Converters;
@@ -70,7 +71,7 @@ namespace TugDSC.Server.WebAppHost
 
         #region -- Constructors --
 
-        public Startup(IHostingEnvironment env, ILoggerFactory loggerFactory)
+        public Startup(IWebHostEnvironment env, ILoggerFactory loggerFactory)
         {
             // Start with a pre-logger till the final
             // logging config is finalized down below
@@ -99,6 +100,15 @@ namespace TugDSC.Server.WebAppHost
         {
             _logger.LogInformation("Configuring services registry");
 
+            // The DSC protocol's registration/authz filters (DscRegKeyAuthzFilter,
+            // VeryStrictInputFilter) read the request body synchronously via
+            // Stream.CopyTo, which Kestrel disallows by default since ASP.NET Core 2.1
+            // (this code predates that change). Payloads here are small JSON bodies,
+            // so allowing sync IO is an acceptable, minimal fix vs. rewriting the filters
+            // to be fully async.
+            services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(
+                options => options.AllowSynchronousIO = true);
+
             // Enable and bind to strongly-typed configuration
             var appSettings = _config.GetSection(nameof(AppSettings));
             services.AddSingleton<IConfiguration>(appSettings);
@@ -125,7 +135,7 @@ namespace TugDSC.Server.WebAppHost
                 // Add the filter by service type reference
                 options.Filters.AddService(typeof(DscRegKeyAuthzFilter));
                 options.Filters.AddService(typeof(VeryStrictInputFilter));
-            }).AddJsonOptions(options =>
+            }).AddNewtonsoftJson(options =>
                 {
                     // This enables converting Enums to/from their string names instead
                     // of their numerical value, based on:
@@ -147,7 +157,7 @@ namespace TugDSC.Server.WebAppHost
         // This method gets called by the runtime. Use this
         // method to configure the HTTP request pipeline.
         public void Configure(IServiceProvider serviceProvider,
-                IApplicationBuilder app, IHostingEnvironment env)
+                IApplicationBuilder app, IWebHostEnvironment env)
         {
             // set development option
             if (env.IsDevelopment())
@@ -155,13 +165,13 @@ namespace TugDSC.Server.WebAppHost
                 app.UseDeveloperExceptionPage();
             }
 
-            // // begin registering routes for incoming requests
-            // var routeBuilder = new RouteBuilder(app);
-            app.UseMvc(routeBuilder =>
+            // endpoint routing (replaces obsolete app.UseMvc from ASP.NET Core <=2.x)
+            app.UseRouting();
+            app.UseEndpoints(endpoints =>
             {
 
                 // Default route welcome message
-                routeBuilder.MapGet("", context =>
+                endpoints.MapGet("/", context =>
                 {
                     return context.Response.WriteAsync(@"
 <h1>Welcome to TugDSC!</h1>
@@ -170,11 +180,14 @@ namespace TugDSC.Server.WebAppHost
                 });
 
                 // Server version info
-                routeBuilder.MapGet("version", context =>
+                endpoints.MapGet("/version", context =>
                 {
                     var version = GetType().GetTypeInfo().Assembly.GetName().Version;
                     return context.Response.WriteAsync($@"{{""version"":""{version}""}}");
                 });
+
+                // Attribute-routed DSC protocol controllers
+                endpoints.MapControllers();
             });
 
             // Resolve some DI classes to make sure they're ready to go when needed and
@@ -229,7 +242,7 @@ namespace TugDSC.Server.WebAppHost
             return appConfigBuilder.Build();
         }
 
-        protected void ConfigureLogging(IHostingEnvironment env, ILoggerFactory loggerFactory)
+        protected void ConfigureLogging(IWebHostEnvironment env, ILoggerFactory loggerFactory)
         {
             var logSettings = _config
                 ?.GetSection(nameof(LogSettings))
@@ -240,12 +253,10 @@ namespace TugDSC.Server.WebAppHost
             if (logSettings != null)
             {
                 if (logSettings.LogType.HasFlag(LogType.Console)) {
-                    _logger.LogInformation("  * enabling Console Logging");
-                    if (logSettings.DebugLog) {
-                        loggerFactory.AddConsole(LogLevel.Debug);
-                    } else {
-                        loggerFactory.AddConsole(LogLevel.Information);
-                    }
+                    // In modern ASP.NET Core, logging providers are configured at host
+                    // build time (see Program.BuildWebHost -> ConfigureLogging.AddConsole);
+                    // providers cannot be added to an already-built ILoggerFactory.
+                    _logger.LogInformation("  * Console Logging enabled");
                 }
 
                 // TODO: Resolve which logger to use
