@@ -181,3 +181,15 @@ The server serves the same store to both protocols; a v1 node just fetches
 > **TLS note.** The v4 downloader negotiates older TLS. It traverses Cloudflare
 > fine (the edge accepts TLS 1.0 and the downloader sends SNI), so v1 and v2
 > nodes can share one proxied hostname — no separate endpoint needed.
+
+## Seeding a baseline from a legacy node
+
+Classic DSC (v1/v2) has no `export`, so a legacy node can't snapshot itself the
+way the DSC v3 pull agent does (see [`../dsc-v3/`](../dsc-v3/) — first-contact
+enrollment). The equivalent for legacy is to **assign the `SystemReport` config
+first**: on its first pull it gathers an inventory (OS, build, .NET, installed
+software, antivirus, firewall, services) and writes it as JSON, which lands in
+the same reports tree the backups mirror. Curate that inventory into a desired
+config, publish it under the node's `ConfigurationName`/`ConfigurationId`, and
+switch the node to it. (`SystemReport` is in
+[`../configs/`](../configs/); deploy it with `tug-publish`.)

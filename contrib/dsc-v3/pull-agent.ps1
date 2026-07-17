@@ -54,7 +54,12 @@ param(
     [string] $DscVersion = 'v3.2.3',
     [string] $InstallDir = "$env:ProgramFiles\DSC",
     [string] $WorkDir = "$env:ProgramData\DscV3Pull",
-    [string] $ReportUrl = ''
+    [string] $ReportUrl = '',
+    # first-contact enrollment: on the very first run, export the node's current
+    # state and upload it as a baseline seed (runs once, gated by a local marker).
+    [string] $EnrollUrl = '',
+    [string] $ExportSpecUrl = '',
+    [switch] $NoEnroll
 )
 
 $ErrorActionPreference = 'Stop'
@@ -100,6 +105,49 @@ if ($useEngine -eq 'auto') {
                  else { 'dsc' }   # neither present -> bootstrap dsc.exe
 }
 Log "engine: $useEngine"
+
+# ---- first-contact enrollment: export current state once ------------------
+# On the very first run (no marker), snapshot what this machine currently is and
+# upload it as a baseline seed, BEFORE applying any desired state. Best-effort:
+# a failure never blocks the pull, and the marker is only written on success so
+# it retries next run.
+$marker = Join-Path $WorkDir 'enrolled.marker'
+if (-not $NoEnroll -and $EnrollUrl -and -not (Test-Path $marker)) {
+    try {
+        Log "first contact: exporting current state via $useEngine"
+        $snapshot = $null
+
+        if ($useEngine -eq 'winget') {
+            $exp = Join-Path $WorkDir 'export.winget.yaml'
+            Remove-Item $exp -ErrorAction SilentlyContinue
+            # NOTE: confirm the exact 'winget configure export' flag on a live node
+            # (the --output flag is unreliable per the docs); fall back to stdout.
+            $wgOut = & winget configure export --file $exp `
+                --accept-configuration-agreements --disable-interactivity 2>&1 | Out-String
+            if (Test-Path $exp) { $snapshot = Get-Content $exp -Raw }
+            elseif ($wgOut.Trim()) { $snapshot = $wgOut }
+        }
+        else {
+            $dsc = Get-DscExe
+            $spec = Join-Path $WorkDir 'export-spec.yaml'
+            if ($ExportSpecUrl) { Invoke-WebRequest -Uri $ExportSpecUrl -OutFile $spec -UseBasicParsing }
+            if (Test-Path $spec) {
+                $snapshot = & $dsc config export --file $spec --output-format yaml 2>&1 | Out-String
+            }
+            else { Log "no export spec (set -ExportSpecUrl); skipping dsc export" }
+        }
+
+        if ($snapshot -and $snapshot.Trim()) {
+            Invoke-WebRequest -Uri $EnrollUrl -Method Post -Body $snapshot -ContentType 'text/yaml' `
+                -Headers @{ 'X-Node' = $env:COMPUTERNAME; 'X-Engine' = $useEngine; 'X-Format' = 'yaml' } `
+                -UseBasicParsing | Out-Null
+            Set-Content -Path $marker -Value ([DateTime]::UtcNow.ToString('o'))
+            Log "enrollment snapshot uploaded to $EnrollUrl; marker written (runs once)"
+        }
+        else { Log "enrollment produced no snapshot; will retry next run" }
+    }
+    catch { Log "enrollment failed (non-fatal, will retry next run): $_" }
+}
 
 # ---- download + verify config --------------------------------------------
 $cfgPath = Join-Path $WorkDir 'config.yaml'

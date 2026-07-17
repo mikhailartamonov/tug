@@ -32,6 +32,9 @@ param(
     [int] $IntervalMinutes = 30,
     [switch] $VerifyChecksum,
     [string] $ReportUrl = '',
+    [string] $EnrollUrl = '',
+    [string] $ExportSpecUrl = '',
+    [switch] $NoEnroll,
     [string] $InstallRoot = "$env:ProgramData\DscV3Pull"
 )
 
@@ -51,6 +54,9 @@ $agentArgs = @(
 )
 if ($VerifyChecksum) { $agentArgs += '-VerifyChecksum' }
 if ($ReportUrl)      { $agentArgs += @('-ReportUrl', "`"$ReportUrl`"") }
+if ($EnrollUrl)      { $agentArgs += @('-EnrollUrl', "`"$EnrollUrl`"") }
+if ($ExportSpecUrl)  { $agentArgs += @('-ExportSpecUrl', "`"$ExportSpecUrl`"") }
+if ($NoEnroll)       { $agentArgs += '-NoEnroll' }
 
 # 3. register the scheduled task: SYSTEM, at boot + every N minutes
 $action  = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ($agentArgs -join ' ')

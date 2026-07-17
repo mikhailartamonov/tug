@@ -1,0 +1,26 @@
+# Export spec for the pull agent's first-contact enrollment (dsc engine).
+#
+#   dsc config export --file export-spec.dsc.yaml --output-format yaml
+#
+# `dsc config export` does NOT dump the whole machine — it enumerates the current
+# instances of the resource *types* listed here (each type must declare an
+# `export` capability in its manifest). The result is an applyable configuration
+# document of the node's current state, used as a baseline seed.
+#
+# Start conservative (OSInfo is exportable per the DSC docs); expand the list once
+# you've confirmed on a live node which resource types are exportable in your DSC
+# version (candidates: installed packages, Windows services, chosen registry keys,
+# Windows features). Only list each exportable type once.
+$schema: https://aka.ms/dsc/schemas/v3/bundled/config/document.json
+resources:
+  - name: os-info
+    type: Microsoft/OSInfo
+    properties: {}
+
+  # --- add after confirming export capability on a live node, e.g.: ---
+  # - name: services
+  #   type: Microsoft.Windows/Service
+  #   properties: {}
+  # - name: packages
+  #   type: Microsoft.WinGet/Package
+  #   properties: {}

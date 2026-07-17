@@ -82,6 +82,43 @@ Optionally pass `-ReportUrl https://dsc.h-edu.online/v3/report` to POST each run
 JSON result back (add a matching endpoint/handler if you want them collected like
 the v1/v2 reports).
 
+## First-contact enrollment (baseline seed)
+
+On its **first run only**, the agent can export the node's **current state** and
+upload it — a snapshot to seed a desired-state baseline from. It's gated by a
+local marker (`C:\ProgramData\DscV3Pull\enrolled.marker`), so it happens exactly
+once per machine; a failure never blocks the pull and just retries next run.
+
+Add `-EnrollUrl` (and, for the dsc engine, `-ExportSpecUrl`) to the installer:
+
+```powershell
+# winget engine — exports installed packages + settings (winget configure export)
+.\Install-DscV3PullAgent.ps1 -Engine winget `
+    -ConfigUrl   https://dsc.h-edu.online/v3/baseline.winget.yaml `
+    -EnrollUrl   https://dsc.h-edu.online/v3/enroll -VerifyChecksum
+
+# dsc engine — exports the resource types listed in the export spec
+.\Install-DscV3PullAgent.ps1 -Engine dsc `
+    -ConfigUrl     https://dsc.h-edu.online/v3/baseline.dsc.yaml `
+    -EnrollUrl     https://dsc.h-edu.online/v3/enroll `
+    -ExportSpecUrl https://dsc.h-edu.online/v3/export-spec.dsc.yaml -VerifyChecksum
+```
+
+The `/v3/enroll` endpoint stores each snapshot under
+`Reports/v3-enroll/<node>/<timestamp>.yaml` on the server (so the gdrive backup
+picks it up). `dsc config export` enumerates only the resource *types* in
+`export-spec.dsc.yaml` — not the whole machine — so you control the scope.
+
+**Turning a seed into a baseline.** The snapshot is already an applyable document.
+Pull it from `Reports/v3-enroll/<node>/`, curate it (trim, parameterize), then
+re-host it under `/v3/` as a managed config — or hand it into
+[`../generator/`](../generator/) as a neutral spec. Pass `-NoEnroll` to skip
+enrollment entirely.
+
+> **Legacy (v1/v2) nodes** have no `export`. Seed them by assigning the
+> **SystemReport** config first (see [`../docs/DEPLOY.md`](../docs/DEPLOY.md)); its
+> inventory JSON lands in the same reports tree.
+
 ## Status
 
 Built and ready; **runtime-validate on a healthy node** — the exact resource
