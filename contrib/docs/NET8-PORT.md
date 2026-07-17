@@ -56,3 +56,40 @@ lets the legitimate pre-registration `SendReport` through.
 The test harness in `contrib/tools/dsc_server_test.py` asserts the resulting
 behavior: forged or absent signatures on an unknown agent are still rejected
 with 401.
+
+## Legacy WMF 4.0 (v1) protocol
+
+Beyond the port, this fork adds the older **v1.0/1.1** pull protocol
+(`DscV1Controller`) so PowerShell 4.0 nodes work against the same server — the
+upstream project only implemented the v2 (WMF 5.x) routes. The details come
+straight from **[MS-DSCPM]** sections 3.1/3.3 (verified against a real Windows
+Server 2012 R2 / PS 4.0 node):
+
+- **No registration, no HMAC.** Configs are addressed by a `ConfigurationId`
+  GUID; possessing it is the token. Deploy the MOF as `<ConfigurationId>.mof`.
+- **Status check** — `POST .../Action(ConfigurationId='<guid>')/GetAction`.
+  Request body is a flat `{Checksum, ChecksumAlgorithm, NodeCompliant, …}` (not
+  the v2 `ClientStatus` array). Response body is **`{"value":"GetConfiguration"}`**
+  (or `"OK"`) — a lowercase `value` field. Returning the v2-style `NodeStatus`
+  instead makes the v4 client fail with `WebDownloadManagerGetActionUnexpectedResult`.
+- **Download** — `GET .../Action(ConfigurationId='<guid>')/ConfigurationContent`
+  (note: `Action(…)`, not `Configurations(…)`), with `Checksum` /
+  `ChecksumAlgorithm` response headers.
+- **Report** — `POST .../Node(s)(ConfigurationId='<guid>')/SendStatusReport`
+  (the spec uses both spellings); stored under `Reports/<guid>/`.
+
+The v2 global filters (registration/HMAC, very-strict input) no-op on these
+actions because they bind no `DscRequest` model, so v1 stays correctly
+unauthenticated.
+
+**Client quirk worth knowing:** the v4 `WebDownloadManager` fails to build its
+request URI from a bare-host `ServerUrl` — the meta-config must give it a
+**path** (classically `…/PSDSCPullServer.svc`), after which it appends the OData
+operations. With that, the v4 downloader traverses Cloudflare fine (edge accepts
+TLS 1.0; it sends SNI), so v1 and v2 nodes share one proxied hostname.
+
+> The WMF **5.1** in-box download manager, by contrast, has a long-standing
+> client-side bug (`DownloadManagerBase.SendStatusReport` throws a format
+> exception before any HTTP request — see PowerShell/PowerShell#2921); it is
+> frozen and identical across Server 2016/2019/2022 and is not fixable
+> server-side. The v2 server itself is exercised by the harness instead.

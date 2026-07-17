@@ -28,6 +28,20 @@ mode, each node checks in on its own schedule to:
 The server itself runs no PowerShell; it stores and serves MOFs + modules and
 collects reports. Drift is corrected automatically between runs.
 
+### Two node generations, one server
+
+This fork serves **both** DSC pull protocols from the same endpoint, so modern
+and legacy Windows nodes can share one server (per [MS-DSCPM]):
+
+| | Protocol | Nodes | Addressed by | Auth |
+|---|---|---|---|---|
+| **v2** | `Nodes(AgentId=…)` | WMF 5.x (PowerShell 5.1) | `ConfigurationNames` | registration key + HMAC |
+| **v1** | `Action(ConfigurationId=…)` | WMF 4.0 (PowerShell 4.0) | a `ConfigurationId` GUID | none (ConfigurationId is the token) |
+
+A v1 node fetches `<ConfigurationId>.mof`; a v2 node registers, then fetches
+`<ConfigurationName>.mof`. Both were verified end-to-end against real Windows
+nodes. See [`docs/DEPLOY.md`](docs/DEPLOY.md) for onboarding each.
+
 ## Start here
 
 New to this? Follow the path that matches what you're trying to do. Each step

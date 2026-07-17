@@ -138,3 +138,46 @@ Invoke-CimMethod -Namespace root/Microsoft/Windows/DesiredStateConfiguration `
     -ClassName MSFT_DSCLocalConfigurationManager `
     -MethodName PerformRequiredConfigurationChecks -Arguments @{ Flags = [uint32]1 }  # force a consistency check now
 ```
+
+## Onboard a legacy WMF 4.0 (v1) node
+
+PowerShell **4.0** nodes speak the older ConfigurationId-based protocol — no
+registration, no `ConfigurationNames`. Address the config by a GUID and publish
+the MOF under that GUID (`tug-publish MyConfig.mof <guid>`). The meta-config uses
+the old `LocalConfigurationManager` block with a `WebDownloadManager`, and the
+`ServerUrl` **must end in a path** (the classic `PSDSCPullServer.svc`) or the v4
+downloader fails constructing its request URI:
+
+```powershell
+$cfgId = '11111111-2222-3333-4444-555555555555'   # your ConfigurationId
+
+Configuration NodeLCMv1 {
+    Node localhost {
+        LocalConfigurationManager {
+            ConfigurationID           = $cfgId
+            RefreshMode               = 'Pull'
+            RefreshFrequencyMins      = 15
+            ConfigurationModeFrequencyMins = 30
+            RebootNodeIfNeeded        = $false
+            DownloadManagerName       = 'WebDownloadManager'
+            DownloadManagerCustomData = @{
+                ServerUrl               = 'https://dsc.example.com/PSDSCPullServer.svc'
+                AllowUnsecureConnection = 'false'
+            }
+        }
+    }
+}
+NodeLCMv1 -OutputPath C:\LcmV1
+Set-DscLocalConfigurationManager -Path C:\LcmV1
+# force a pull (PS 4.0 has no Update-DscConfiguration):
+Invoke-CimMethod -Namespace root/Microsoft/Windows/DesiredStateConfiguration `
+    -ClassName MSFT_DSCLocalConfigurationManager `
+    -MethodName PerformRequiredConfigurationChecks -Arguments @{ Flags = [uint32]1 }
+```
+
+The server serves the same store to both protocols; a v1 node just fetches
+`<ConfigurationId>.mof`. See [`NET8-PORT.md`](NET8-PORT.md) for the wire details.
+
+> **TLS note.** The v4 downloader negotiates older TLS. It traverses Cloudflare
+> fine (the edge accepts TLS 1.0 and the downloader sends SNI), so v1 and v2
+> nodes can share one proxied hostname — no separate endpoint needed.

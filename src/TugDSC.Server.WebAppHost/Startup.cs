@@ -305,8 +305,9 @@ namespace TugDSC.Server.WebAppHost
 
   <p class="lede reveal d2">
     This endpoint hosts a <strong>Desired State Configuration</strong> pull server for
-    Windows PowerShell nodes. Instead of pushing settings out, each machine reaches in
-    on its own schedule to fetch the configuration it should be in.
+    Windows PowerShell nodes &mdash; both modern (WMF&nbsp;5.x, registration-key) and
+    legacy (WMF&nbsp;4.0, ConfigurationId). Instead of pushing settings out, each machine
+    reaches in on its own schedule to fetch the configuration it should be in.
   </p>
   <p class="lede reveal d2">
     On every check-in a node pulls its assigned configuration, downloads any resource
@@ -362,8 +363,8 @@ namespace TugDSC.Server.WebAppHost
 
   <div class="runtime reveal d7">
     <span class="label">Runtime</span>
-    <span class="chip"><b>DSC</b> Pull Protocol v2</span>
-    <span class="chip">Registration-key auth</span>
+    <span class="chip"><b>DSC</b> Pull Protocol v1 &amp; v2</span>
+    <span class="chip">Registration-key &amp; ConfigurationId</span>
     <span class="chip"><b>.NET</b> 8 · Kestrel</span>
     <span class="chip">MOF over HTTPS</span>
   </div>
