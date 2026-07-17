@@ -82,9 +82,11 @@ server {
 configuration TugLCM {
     Node localhost {
         Settings {
-            RefreshMode          = 'Pull'
-            RefreshFrequencyMins = 30
-            ConfigurationMode    = 'ApplyAndAutoCorrect'
+            RefreshMode                    = 'Pull'
+            RefreshFrequencyMins           = 30
+            ConfigurationModeFrequencyMins = 15
+            ConfigurationMode              = 'ApplyAndAutoCorrect'
+            RebootNodeIfNeeded             = $false
         }
         ConfigurationRepositoryWeb Tug {
             ServerURL          = 'https://dsc.example.com'
@@ -99,5 +101,40 @@ configuration TugLCM {
 }
 TugLCM -OutputPath C:\DSC\LCM
 Set-DscLocalConfigurationManager -Path C:\DSC\LCM
-Update-DscConfiguration -Wait -Verbose
+Update-DscConfiguration -Wait -Verbose      # force one pull now, don't wait for the timer
+```
+
+### How often a node checks in
+
+Registration only settles *which* server and *which* configuration a node
+wants. The **cadence** is set here in the LCM meta-configuration `Settings`
+block (applied by `Set-DscLocalConfigurationManager`), and it's driven by two
+independent timers:
+
+| Setting | Controls | Min / default |
+|---------|----------|---------------|
+| `RefreshFrequencyMins` | how often the node **contacts the server** to download the latest configuration + modules | min **30**, default 30 |
+| `ConfigurationModeFrequencyMins` | how often the node runs a **consistency check** — re-applies its cached configuration and (in AutoCorrect) fixes drift | min **15**, default 15 |
+
+```
+every ConfigurationModeFrequencyMins (15m):  consistency check of the cached config → correct drift
+every RefreshFrequencyMins           (30m):  pull the latest config/modules from the server → apply
+```
+
+- `RefreshFrequencyMins` must be a **multiple** of `ConfigurationModeFrequencyMins`
+  (the LCM rounds it up otherwise). The classic pair is 15 / 30.
+- `ConfigurationMode` decides what a consistency check *does*:
+  `ApplyOnly` (apply once), `ApplyAndMonitor` (report drift, don't fix), or
+  `ApplyAndAutoCorrect` (re-apply to fix drift each check).
+- The LCM realizes these timers as scheduled tasks under
+  `\Microsoft\Windows\Desired State Configuration`.
+
+Useful commands on the node:
+
+```powershell
+Get-DscLocalConfigurationManager    # inspect the current cadence + mode
+Update-DscConfiguration -Wait -Verbose                          # force a pull now
+Invoke-CimMethod -Namespace root/Microsoft/Windows/DesiredStateConfiguration `
+    -ClassName MSFT_DSCLocalConfigurationManager `
+    -MethodName PerformRequiredConfigurationChecks -Arguments @{ Flags = [uint32]1 }  # force a consistency check now
 ```
